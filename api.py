@@ -3,6 +3,7 @@ import requests
 import json
 from collections import Counter
 from datetime import datetime as dt
+from datetime import timedelta as d
 
 
 class GetFromGitApi(object):
@@ -80,6 +81,19 @@ class GetFromGitApi(object):
               f'| {str(cols_values[1]) + " " * (length_value - len(str(cols_values[1])) + 4)}|')
         print('-' * (width + 9))
 
+    @staticmethod
+    def print_old_pr(pr):
+        cols_names = list(pr.keys())
+        cols_names.extend(list(pr.values()))
+        length_name = max(len(str(elem)) for elem in cols_names)
+        gutter = 2
+        length_name += gutter
+        print('-' * (length_name+gutter))
+        print(f'| {cols_names[0] + " " * (length_name - len(cols_names[0]) - 1)}|')
+        print('|' + '-' * (length_name) + '|')
+        print(f'| {str(cols_names[1]) + " " * (length_name - len(str(cols_names[1])) - 1)}|')
+        print('-' * (length_name+gutter))
+
     def get_top_authors(self, params):
         """
         Самые активные участники. Таблица из 2 столбцов: login автора, количество его
@@ -131,7 +145,6 @@ class GetFromGitApi(object):
         owner = self.url.split('/')[-2]
         repo = self.url.split('/')[-1]
 
-        commits = []
         page = 1
         statuses = ['open', 'closed']
         result_status = {}
@@ -151,3 +164,39 @@ class GetFromGitApi(object):
                 result_status[status] = pr_content.json().get('total_count')
 
         self.print_pr(result_status)
+
+    def get_older_pull_requests(self, params):
+        """"
+        Количество “старых” pull requests на заданном периоде времени по дате создания
+        PR и заданной ветке, являющейся базовой для этого PR. Pull request считается
+        старым, если он не закрывается в течение 30 дней и до сих пор открыт.
+        """
+        self.get_params(params)
+        owner = self.url.split('/')[-2]
+        repo = self.url.split('/')[-1]
+
+        curr_dt = dt.now()
+
+        old_dt_obj = dt.strptime(self.since, '%Y-%m-%dT%H:%M:%SZ')
+        delta_dt = curr_dt - old_dt_obj
+        delta_30d = d(days=30)
+        if delta_dt.days >= 30:
+            self.until = dt.strftime(dt.strptime(self.until, '%Y-%m-%dT%H:%M:%SZ') - delta_30d, '%Y-%m-%dT%H:%M:%SZ')
+        page = 1
+        status = 'open'
+        result_status = {}
+        params = {
+            "Accept": "application/vnd.github.v3+json",
+            "q": f"repo:{owner}/{repo} is:pr is:{status} created:{self.since[:10]}..{self.until[:10]}",
+            "page": f"{page}",
+            "per_page": "100",
+            "sort": "created",
+            "base": self.branch,
+            "order": "desc",
+        }
+        query_url = f'https://api.github.com/search/issues'
+        older_pr_content = requests.get(query_url, params=params, headers=self.headers)
+        if older_pr_content.status_code == 200:
+            result_status['old_pr'] = older_pr_content.json().get('total_count')
+
+        self.print_old_pr(result_status)
