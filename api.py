@@ -64,15 +64,18 @@ class GetFromGitApi(object):
         print('-' * (width + 5))
 
     @staticmethod
-    def print_pr(pr):
-        cols_names = list(pr.keys())
-        cols_values = list(pr.values())
+    def print_pr(result_dict, querry):
+        cols_names = list(result_dict.keys())
+        cols_values = list(result_dict.values())
         length_name = max(len(elem) for elem in cols_names)
         length_value = max(len(str(elem)) for elem in cols_values)
         gutter = 2
         length_name += gutter
         length_value += gutter
         width = length_name + length_value
+        if len(querry) > width + 9:
+            width = len(querry)
+        print(' '*((width + 9 - len(querry))//2) + f' {querry}')
         print('-' * (width + 9))
         print(f'| {cols_names[0] + " " * (length_name - len(cols_names[0]))}' +
               f'| {cols_names[1] + " " * (length_value - len(cols_names[1]) + 4)}|')
@@ -82,17 +85,20 @@ class GetFromGitApi(object):
         print('-' * (width + 9))
 
     @staticmethod
-    def print_old_pr(pr):
-        cols_names = list(pr.keys())
-        cols_names.extend(list(pr.values()))
-        length_name = max(len(str(elem)) for elem in cols_names)
+    def print_old_pr(result_dict, querry):
+        cols_names = list(result_dict.keys())
+        cols_names.extend(list(result_dict.values()))
+        width = max(len(str(elem)) for elem in cols_names)
         gutter = 2
-        length_name += gutter
-        print('-' * (length_name+gutter))
-        print(f'| {cols_names[0] + " " * (length_name - len(cols_names[0]) - 1)}|')
-        print('|' + '-' * (length_name) + '|')
-        print(f'| {str(cols_names[1]) + " " * (length_name - len(str(cols_names[1])) - 1)}|')
-        print('-' * (length_name+gutter))
+        width += gutter
+        if len(querry) > width + gutter:
+            width = len(querry)
+        print(' ' * ((width + gutter - len(querry)) // 2) + f' {querry}')
+        print('-' * (width+gutter))
+        print(f'| {cols_names[0] + " " * (width - len(cols_names[0]) - 1)}|')
+        print('|' + '-' * (width) + '|')
+        print(f'| {str(cols_names[1]) + " " * (width - len(str(cols_names[1])) - 1)}|')
+        print('-' * (width+gutter))
 
     def get_top_authors(self, params):
         """
@@ -162,8 +168,8 @@ class GetFromGitApi(object):
             pr_content = requests.get(query_url, params=params, headers=self.headers)
             if pr_content.status_code == 200:
                 result_status[status] = pr_content.json().get('total_count')
-
-        self.print_pr(result_status)
+        querry = 'pull requests'
+        self.print_pr(result_status, querry)
 
     def get_older_pull_requests(self, params):
         """"
@@ -199,4 +205,71 @@ class GetFromGitApi(object):
         if older_pr_content.status_code == 200:
             result_status['old_pr'] = older_pr_content.json().get('total_count')
 
-        self.print_old_pr(result_status)
+        querry = 'old pull requests'
+        self.print_old_pr(result_status, querry)
+
+    def get_issues(self, params):
+        """
+        Количество открытых и закрытых issues на заданном периоде времени по дате
+        создания issue
+        """
+        self.get_params(params)
+        owner = self.url.split('/')[-2]
+        repo = self.url.split('/')[-1]
+
+        page = 1
+        statuses = ['open', 'closed']
+        result_status = {}
+        for status in statuses:
+            params = {
+                "Accept": "application/vnd.github.v3+json",
+                "q": f"repo:{owner}/{repo} is:issue is:{status} created:{self.since[:10]}..{self.until[:10]}",
+                "page": f"{page}",
+                "per_page": "100",
+                "sort": "created",
+                "base": self.branch,
+                "order": "desc",
+            }
+            query_url = f'https://api.github.com/search/issues'
+            pr_content = requests.get(query_url, params=params, headers=self.headers)
+            if pr_content.status_code == 200:
+                result_status[status] = pr_content.json().get('total_count')
+
+        querry = 'issues'
+        self.print_pr(result_status, querry)
+
+    def get_old_issues(self, params):
+        """
+        Количество “старых” issues на заданном периоде времени по дате создания issue.
+        Issue считается старым, если он не закрывается в течение 14 дней.
+        """
+        self.get_params(params)
+        owner = self.url.split('/')[-2]
+        repo = self.url.split('/')[-1]
+
+        curr_dt = dt.now()
+
+        old_dt_obj = dt.strptime(self.since, '%Y-%m-%dT%H:%M:%SZ')
+        delta_dt = curr_dt - old_dt_obj
+        delta_30d = d(days=14)
+        if delta_dt.days >= 14:
+            self.until = dt.strftime(dt.strptime(self.until, '%Y-%m-%dT%H:%M:%SZ') - delta_30d, '%Y-%m-%dT%H:%M:%SZ')
+        page = 1
+        status = 'open'
+        result_status = {}
+        params = {
+            "Accept": "application/vnd.github.v3+json",
+            "q": f"repo:{owner}/{repo} is:issue is:{status} created:{self.since[:10]}..{self.until[:10]}",
+            "page": f"{page}",
+            "per_page": "100",
+            "sort": "created",
+            "base": self.branch,
+            "order": "desc",
+        }
+        query_url = f'https://api.github.com/search/issues'
+        older_pr_content = requests.get(query_url, params=params, headers=self.headers)
+        if older_pr_content.status_code == 200:
+            result_status['old_issues'] = older_pr_content.json().get('total_count')
+
+        querry = 'old issues'
+        self.print_old_pr(result_status, querry)
