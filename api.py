@@ -3,6 +3,7 @@ import requests
 from collections import Counter
 from datetime import datetime as dt
 from datetime import timedelta as d
+from time import sleep
 
 from config import TOKENS
 
@@ -20,7 +21,6 @@ class GetFromGitApi(object):
     :-branch branch: string # Ветка репозитория. По умолчанию - master.
     Параметры должны передаваться в скрипт через командную строку
     """
-    count_requests = 0  # количество запросов к Github
     result_status = {}
     start_service = dt.now()
     date_format = '%Y-%m-%dT%H:%M:%SZ'
@@ -38,12 +38,15 @@ class GetFromGitApi(object):
         self.tokens = {}
         self.count_tokens = len(TOKENS)
         self.curr_token = ''
+        self.no_token_used_requests = 0
+        self.no_token_reset = 0
         self.max_count_requests = 60
         if TOKENS:
             for token in TOKENS:
                 self.tokens[token] = {
                     'start_using': dt.now(),
                     'count_requests': 0,
+                    'reset': 0
                 }
             self.curr_token = TOKENS[0]
             self.max_count_requests = 5000
@@ -165,6 +168,26 @@ class GetFromGitApi(object):
         print(f'| {str(cols_names[1]) + " " * (width - len(str(cols_names[1])) - 1)}|')
         print('-' * (width+gutter))
 
+    def check_rate_limits(self):
+        params = {"Accept": "application/vnd.github.v3+json"}
+        api_url = 'https://api.github.com/rate_limit'
+        if self.curr_token:
+            result = requests.get(api_url, params=params, headers=self.headers)
+            if result.status_code == 200:
+                json_answer = result.json()
+                self.tokens[self.curr_token]['count_requests'] = json_answer.get('resources').get('core').get('used')
+                self.tokens[self.curr_token]['reset'] = json_answer.get('resources').get('core').get('reset')
+            else:
+                raise Exception(f'API error {result.status_code}: {result.reason}')
+        else:
+            result = requests.get(api_url, params=params)
+            if result.status_code == 200:
+                json_answer = result.json()
+                self.no_token_used_requests = json_answer.get('resources').get('core').get('used')
+                self.no_token_reset = json_answer.get('resources').get('core').get('reset')
+            else:
+                raise Exception(f'API error {result.status_code}: {result.reason}')
+
     def reset_tokens(self):
         for token in TOKENS:
             delta = dt.now() - self.tokens[token]['start_using']
@@ -177,14 +200,31 @@ class GetFromGitApi(object):
             tokens = list(self.tokens)
             tokens.remove(self.curr_token)
             self.curr_token = tokens[0]
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def to_sleep(delta):
+        minutes = d(minutes=60).total_seconds() - delta.total_seconds()
+        print(f'Нужно подождать несколько минут: {str(int(minutes//60))}')
+        sleep(int(minutes))
 
     def get_request(self, querry_params, status, request_name):
+        self.check_rate_limits()
         if self.curr_token:
             self.reset_tokens()
 
-        if self.tokens[self.curr_token]['count_requests'] >= self.max_count_requests:
-            self.change_token()
-            self.headers.update({"Authorization": f"token {self.curr_token}"})
+            if self.tokens[self.curr_token]['count_requests'] >= self.max_count_requests:
+                change_token = self.change_token()
+                if change_token:
+                    self.headers.update({"Authorization": f"token {self.curr_token}"})
+                else:
+                    delta = self.tokens[self.curr_token]['reset'] - dt.now()
+                    self.to_sleep(delta)
+        else:
+            delta = dt.fromtimestamp(self.no_token_reset) - dt.now()
+            self.to_sleep(delta)
 
         query_url = f'https://api.github.com/search/issues'
 
@@ -192,31 +232,38 @@ class GetFromGitApi(object):
             pr_content = requests.get(query_url, params=querry_params, headers=self.headers)
             if pr_content.status_code == 200:
                 self.result_status[status] = pr_content.json().get('total_count')
+            else:
+                raise Exception(f'API error {pr_content.status_code}: {pr_content.reason}')
 
         if request_name == 'get_older_pull_requests':
             older_pr_content = requests.get(query_url, params=querry_params, headers=self.headers)
             if older_pr_content.status_code == 200:
                 self.result_status['old_pr'] = older_pr_content.json().get('total_count')
+            else:
+                raise Exception(f'API error {older_pr_content.status_code}: {older_pr_content.reason}')
 
         if request_name == 'get_issues':
             pr_content = requests.get(query_url, params=querry_params, headers=self.headers)
             if pr_content.status_code == 200:
                 self.result_status[status] = pr_content.json().get('total_count')
+            else:
+                raise Exception(f'API error {pr_content.status_code}: {pr_content.reason}')
 
         if request_name == 'get_old_issues':
             older_pr_content = requests.get(query_url, params=querry_params, headers=self.headers)
             if older_pr_content.status_code == 200:
                 self.result_status['old_issues'] = older_pr_content.json().get('total_count')
+            else:
+                raise Exception(f'API error {older_pr_content.status_code}: {older_pr_content.reason}')
 
         if request_name == 'get_top_authors':
             owner, repo = self.get_owner_repo()
             query_url = f'https://api.github.com/repos/{owner}/{repo}/commits'
             commits_content = self.request.get(query_url, params=querry_params, headers=self.headers)
             if commits_content.status_code == 200:
-                self.count_requests += 1
                 return commits_content
-
-        self.count_requests += 1
+            else:
+                raise Exception(f'API error {commits_content.status_code}: {commits_content.reason}')
 
     def get_top_authors(self, params):
         """
@@ -269,7 +316,6 @@ class GetFromGitApi(object):
             querry_params = self.get_querry_params(owner, repo, section, status, page)
             request_name = 'get_pull_requests'
             self.get_request(querry_params, status, request_name)
-
         querry = 'pull requests'
         self.print_pr(self.result_status, querry)
 

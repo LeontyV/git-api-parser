@@ -2,12 +2,14 @@ from config import TOKENS
 import requests
 from datetime import datetime as dt
 from datetime import timedelta as d
-
-headers = {"Authorization": f"token {TOKENS[0]}"}
+token = TOKENS[0]
+headers = {"Authorization": f"token {token}"}
 params = {"Accept": "application/vnd.github.v3+json"}
-api_url = 'https://api.github.com'
+# print(headers)
+api_url = 'https://api.github.com/rate_limit'
 content = requests.get(api_url, params=params, headers=headers)
 print(content)
+print(content.content)
 
 #
 # branch = 'master'
