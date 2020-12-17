@@ -1,9 +1,14 @@
-from config import USER, PASS, TOKEN
+from config import TOKENS
 import requests
 from datetime import datetime as dt
 from datetime import timedelta as d
 
-# headers = {"Authorization": f"token {TOKEN}"}
+headers = {"Authorization": f"token {TOKENS[0]}"}
+params = {"Accept": "application/vnd.github.v3+json"}
+api_url = 'https://api.github.com'
+content = requests.get(api_url, params=params, headers=headers)
+print(content)
+
 #
 # branch = 'master'
 # page = 1
@@ -25,13 +30,3 @@ from datetime import timedelta as d
 #         result_status[status] = pr_content.json().get('total_count')
 #
 # print(result_status)
-
-old_dt = '2020-10-15T00:00:00Z'
-curr_dt = dt.now()
-
-old_dt_obj = dt.strptime(old_dt, '%Y-%m-%dT%H:%M:%SZ')
-print(old_dt_obj)
-delta_dt = curr_dt - old_dt_obj
-print(delta_dt)
-new_dt = old_dt_obj + delta_dt
-print(new_dt - d(days=30))
