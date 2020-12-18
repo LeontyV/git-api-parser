@@ -4,6 +4,7 @@ from collections import Counter
 from datetime import datetime as dt
 from datetime import timedelta as d
 from time import sleep
+import re
 
 from config import TOKENS
 
@@ -52,19 +53,43 @@ class GetFromGitApi(object):
             self.max_count_requests = 5000
             self.headers.update({"Authorization": f"token {self.curr_token}"})
 
+    @staticmethod
+    def check_valid_data(data):
+        pattern = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)'
+        match = re.match(pattern, data)
+        if match is None:
+            return False
+        else:
+            return True
+
+    @staticmethod
+    def check_valid_url(data):
+        pattern = r"(https://github.com/[\w-]+/[\w-]+)"
+        match = re.match(pattern, data)
+        if match is None:
+            return False
+        else:
+            return True
+
     def get_params(self, params):
         if '-url' in params:
             index = params.index('-url')
             self.url = params[index + 1]
+            if not self.check_valid_url(self.url):
+                raise Exception(f'Неправильный URL "{self.url}" в параметре "-url". Допустимый формат данных: "-url https://github.com/ytdl-org/youtube-dl"')
         if '-branch' in params:
             index = params.index('-branch')
             self.branch = params[index + 1]
         if '-since' in params:
             index = params.index('-since')
             self.since = params[index + 1]
+            if not self.check_valid_data(self.since):
+                raise Exception(f'Неправильная дата {self.since} в параметре "-since". Допустимый формат данных: "-since 2020-12-12T00:00:00Z"')
         if '-until' in params:
             index = params.index('-until')
             self.until = params[index + 1]
+            if not self.check_valid_data(self.until):
+                raise Exception(f'Неправильная дата {self.until} в параметре "-until". Допустимый формат данных: "-until 2020-12-12T00:00:00Z"')
 
     def get_querry_params(self, owner, repo, section, status, page):
         curr_date = dt.now().strftime(self.date_format)
@@ -206,9 +231,10 @@ class GetFromGitApi(object):
 
     @staticmethod
     def to_sleep(delta):
-        minutes = d(minutes=60).total_seconds() - delta.total_seconds()
-        print(f'Нужно подождать несколько минут: {str(int(minutes//60))}')
-        sleep(int(minutes))
+        timer = delta.total_seconds()
+        if int(timer//60) > 0:
+            print(f'Нужно подождать несколько минут: {str(int(timer//60))}')
+            sleep(int(timer))
 
     def get_request(self, querry_params, status, request_name):
         self.check_rate_limits()
@@ -223,8 +249,10 @@ class GetFromGitApi(object):
                     delta = self.tokens[self.curr_token]['reset'] - dt.now()
                     self.to_sleep(delta)
         else:
-            delta = dt.fromtimestamp(self.no_token_reset) - dt.now()
-            self.to_sleep(delta)
+            if self.no_token_used_requests >= self.max_count_requests:
+                print(f'Превышено число запросов без ключа API: {self.no_token_used_requests}/{self.max_count_requests}')
+                delta = dt.fromtimestamp(self.no_token_reset) - dt.now()
+                self.to_sleep(delta)
 
         query_url = f'https://api.github.com/search/issues'
 

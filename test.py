@@ -2,14 +2,16 @@ from config import TOKENS
 import requests
 from datetime import datetime as dt
 from datetime import timedelta as d
-token = TOKENS[0]
-headers = {"Authorization": f"token {token}"}
-params = {"Accept": "application/vnd.github.v3+json"}
-# print(headers)
-api_url = 'https://api.github.com/rate_limit'
-content = requests.get(api_url, params=params, headers=headers)
-print(content)
-print(content.content)
+import re
+
+# token = TOKENS[0]
+# headers = {"Authorization": f"token {token}"}
+# params = {"Accept": "application/vnd.github.v3+json"}
+# # print(headers)
+# api_url = 'https://api.github.com/rate_limit'
+# content = requests.get(api_url, params=params, headers=headers)
+# print(content)
+# print(content.content)
 
 #
 # branch = 'master'
@@ -32,3 +34,8 @@ print(content.content)
 #         result_status[status] = pr_content.json().get('total_count')
 #
 # print(result_status)
+
+example = 'https://github.com/ytdl-orG/youtube-dl'
+pattern = r"(https://github.com/[\w-]+/[\w-]+)"
+match = re.match(pattern, example)
+print(match)
