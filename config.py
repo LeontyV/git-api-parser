@@ -7,5 +7,5 @@ PASS = str(os.getenv("GIT_PASS"))
 # Задаем список токенов для API
 # Для обхода количества ограничений
 TOKENS = [
-    '85e5e375bb7db04cc9602a62bf36452e3e5e0997',
+    'cfc885164c71880db7471d9725a55fa7c1f8be5c',
 ]
